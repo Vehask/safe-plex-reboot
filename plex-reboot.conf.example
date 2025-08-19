@@ -1,0 +1,22 @@
+# Configuration file for safe-plex-reboot.sh
+# Copy this to ~/.config/plex-reboot.conf and set your values
+
+# Plex authentication token (get from Plex Web > Settings > Account > Show Advanced)
+PLEX_TOKEN="your_actual_plex_token_here"
+
+# Plex server URL
+# For same VM/machine: http://127.0.0.1:32400
+# For different VM/machine: http://PLEX_VM_IP:32400
+# PLEX_SERVER="http://192.168.1.100:32400"
+
+# Log file location (default: /var/log/update-logs/update.log)
+# LOGFILE="/home/user/logs/plex-reboot.log"
+
+# Check interval in seconds (default: 300 = 5 minutes)
+# CHECK_INTERVAL=300
+
+# Maximum wait time in seconds (default: 7200 = 2 hours)
+# MAX_WAIT_TIME=7200
+
+# Debug mode - set to true to enable detailed logging (default: false)
+# DEBUG=true
