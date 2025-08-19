@@ -26,13 +26,17 @@ cd safe-plex-reboot
 wget https://raw.githubusercontent.com/vehask/safe-plex-reboot/main/safe-plex-reboot.sh
 chmod +x safe-plex-reboot.sh
 ```
+### 2. Make it executable
+```bash
+chmod +x /Path/to/script/safe-plex-reboot.sh
+```
 
-### 2. Get Your Plex Token
+### 3. Get Your Plex Token
 
 Follow this link for official instructions from Plex:
 https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/
 
-### 3. Configure the Script
+### 4. Configure the Script
 
 ```bash
 # Copy the example configuration
