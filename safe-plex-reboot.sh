@@ -1,66 +1,134 @@
 #!/bin/bash
-# safe-plex-reboot.sh
+# plex-safe-reboot.sh
 # Checks Plex for active streams before rebooting
-# Usage: ./safe-plex-reboot.sh [--force] [--dry-run]
-# Requires: PLEX_TOKEN environment variable or config file
+# Designed to run as a systemd service
+# Configuration: /etc/plex-safe-reboot/config
 
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
-# Set PATH explicitly for cron compatibility
+# Set PATH explicitly for systemd compatibility
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-# Set HOME if not set (for cron compatibility)
-if [[ -z "${HOME:-}" ]]; then
-    HOME="$(getent passwd "$(whoami)" | cut -d: -f6)"
-    export HOME
-fi
+# Default configuration file location
+CONFIG_FILE="${CONFIG_FILE:-/etc/plex-safe-reboot/config}"
 
-# Configuration with cron-safe defaults
-PLEX_SERVER="${PLEX_SERVER:-http://127.0.0.1:32400}"
-LOGFILE="${LOGFILE:-/var/log/update-logs/update.log}"
-CONFIG_FILE="${HOME}/.config/plex-reboot.conf"
-CHECK_INTERVAL="${CHECK_INTERVAL:-300}"  # 5 minutes
-MAX_WAIT_TIME="${MAX_WAIT_TIME:-7200}"   # 2 hours max wait
+# Variables to track command-line overrides
+CLI_DRY_RUN=""
+CLI_DEBUG=""
 
-# Debug mode - set to true to enable detailed logging
-DEBUG="${DEBUG:-false}"
-
-# Script directory for relative paths
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Command line options
-FORCE_REBOOT=false
-DRY_RUN=false
-
-# Parse command line arguments
+# Parse command line arguments before loading config
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --force)
-            FORCE_REBOOT=true
-            shift
+        --config)
+            # Open the config file in nano (uses CONFIG_FILE variable)
+            if [[ -f "$CONFIG_FILE" ]]; then
+                nano "$CONFIG_FILE"
+            else
+                echo "Error: Configuration file not found: $CONFIG_FILE" >&2
+                echo "Expected location: $CONFIG_FILE" >&2
+                exit 1
+            fi
+            exit 0
             ;;
         --dry-run)
-            DRY_RUN=true
+            CLI_DRY_RUN="true"
             shift
             ;;
         --debug)
-            DEBUG=true
+            CLI_DEBUG="true"
             shift
             ;;
         --help|-h)
-            echo "Usage: $0 [--force] [--dry-run] [--debug] [--help]"
-            echo "  --force    Skip stream check and reboot immediately"
-            echo "  --dry-run  Show what would happen without rebooting"
-            echo "  --debug    Enable detailed debug logging"
-            echo "  --help     Show this help message"
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --config         Open configuration file in nano"
+            echo "  --dry-run        Test mode - don't actually reboot"
+            echo "  --debug          Enable detailed debug logging"
+            echo "  --help, -h       Show this help message"
+            echo ""
+            echo "Configuration file: $CONFIG_FILE"
             exit 0
             ;;
         *)
             echo "Unknown option: $1" >&2
+            echo "Use --help for usage information" >&2
             exit 1
             ;;
     esac
 done
+
+# Load configuration from file
+load_config() {
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        echo "ERROR: Configuration file not found: $CONFIG_FILE" >&2
+        exit 1
+    fi
+    
+    # Source the config file
+    # shellcheck disable=SC1090
+    source "$CONFIG_FILE"
+    
+    # Validate required configuration
+    if [[ -z "${PLEX_TOKEN:-}" ]]; then
+        echo "ERROR: PLEX_TOKEN not set in $CONFIG_FILE" >&2
+        echo "Get token from: Plex Web > Settings > Account > Show Advanced" >&2
+        exit 1
+    fi
+    
+    # Set defaults for optional configuration
+    PLEX_SERVER="${PLEX_SERVER:-http://127.0.0.1:32400}"
+    CHECK_INTERVAL="${CHECK_INTERVAL:-300}"
+    MAX_WAIT_TIME="${MAX_WAIT_TIME:-7200}"
+    MAX_WAIT_TIME_ENABLED="${MAX_WAIT_TIME_ENABLED:-true}"
+    FORCE_REBOOT="${FORCE_REBOOT:-false}"
+    SCRIPT_DIR="${SCRIPT_DIR:-/usr/local/bin/scripts/plex-safe-reboot}"
+    LOGFILE="${LOGFILE:-/var/log/plex-safe-reboot/plex-reboot.log}"
+    LOG_FILE_ROLLOVER="${LOG_FILE_ROLLOVER:-true}"
+    LOG_FILE_ROLLOVER_DAYS="${LOG_FILE_ROLLOVER_DAYS:-30}"
+    DEBUG="${DEBUG:-false}"
+    DRY_RUN="${DRY_RUN:-false}"
+    
+    # Apply command-line overrides (these take precedence over config file)
+    if [[ -n "$CLI_DRY_RUN" ]]; then
+        DRY_RUN="$CLI_DRY_RUN"
+    fi
+    if [[ -n "$CLI_DEBUG" ]]; then
+        DEBUG="$CLI_DEBUG"
+    fi
+}
+
+# Function to rotate log files
+rotate_logs() {
+    if [[ "$LOG_FILE_ROLLOVER" != true ]]; then
+        return 0
+    fi
+    
+    if [[ ! -f "$LOGFILE" ]]; then
+        return 0
+    fi
+    
+    # Find and delete log files older than specified days
+    local log_dir
+    log_dir="$(dirname "$LOGFILE")"
+    
+    if [[ -d "$log_dir" ]]; then
+        find "$log_dir" -name "*.log.*" -type f -mtime +"$LOG_FILE_ROLLOVER_DAYS" -delete 2>/dev/null || true
+    fi
+    
+    # Check if current log file is larger than 10MB
+    local log_size
+    log_size=$(stat -f%z "$LOGFILE" 2>/dev/null || stat -c%s "$LOGFILE" 2>/dev/null || echo 0)
+    
+    if [[ $log_size -gt 10485760 ]]; then
+        # Rotate the log file
+        local timestamp
+        timestamp=$(date '+%Y%m%d-%H%M%S')
+        mv "$LOGFILE" "${LOGFILE}.${timestamp}" 2>/dev/null || true
+        touch "$LOGFILE"
+        log "Log file rotated: ${LOGFILE}.${timestamp}"
+    fi
+}
 
 # Function to log messages
 log() {
@@ -89,45 +157,12 @@ debug_log_file_only() {
     fi
 }
 
-# Function to get Plex token
-get_plex_token() {
-    # Try environment variable first
-    if [[ -n "${PLEX_TOKEN:-}" ]]; then
-        echo "$PLEX_TOKEN"
-        return 0
-    fi
-    
-    # Try multiple config file locations for cron compatibility
-    local config_locations=(
-        "$CONFIG_FILE"
-        "${SCRIPT_DIR}/plex-reboot.conf"
-        "/etc/plex-reboot.conf"
-        "${HOME}/.plex-reboot.conf"
-    )
-    
-    for config in "${config_locations[@]}"; do
-        if [[ -r "$config" ]]; then
-            local token
-            token=$(grep -E "^PLEX_TOKEN=" "$config" 2>/dev/null | cut -d= -f2- | tr -d '"'"'"'' | xargs)
-            if [[ -n "$token" ]]; then
-                echo "$token"
-                return 0
-            fi
-        fi
-    done
-    
-    log "ERROR: PLEX_TOKEN not found in environment or config files"
-    log "Checked locations: ${config_locations[*]}"
-    log "Get token from: Plex Web > Settings > Account > Show Advanced"
-    exit 1
-}
-
 # Function to validate Plex server connectivity
 validate_plex_server() {
     local token="$1"
     local curl_cmd
     
-    # Find curl command (cron-safe)
+    # Find curl command
     if command -v /usr/bin/curl >/dev/null 2>&1; then
         curl_cmd="/usr/bin/curl"
     elif command -v curl >/dev/null 2>&1; then
@@ -136,6 +171,8 @@ validate_plex_server() {
         log "ERROR: curl command not found"
         return 1
     fi
+    
+    debug_log "Testing connection to Plex server: $PLEX_SERVER"
     
     if ! $curl_cmd -sf --max-time 10 "$PLEX_SERVER/?X-Plex-Token=$token" >/dev/null 2>&1; then
         log "ERROR: Cannot connect to Plex server at $PLEX_SERVER"
@@ -147,9 +184,9 @@ validate_plex_server() {
 # Function to check active streams using JSON parsing
 check_streams() {
     local token="$1"
-    local response sessions curl_cmd
+    local response curl_cmd
     
-    # Find curl command (cron-safe)
+    # Find curl command
     if command -v /usr/bin/curl >/dev/null 2>&1; then
         curl_cmd="/usr/bin/curl"
     elif command -v curl >/dev/null 2>&1; then
@@ -195,7 +232,7 @@ do_reboot() {
     fi
     
     log "Initiating system reboot..."
-    # Try multiple reboot methods for cron compatibility
+    # Try multiple reboot methods for compatibility
     if command -v /usr/bin/systemctl >/dev/null 2>&1; then
         /usr/bin/systemctl reboot
     elif command -v /bin/systemctl >/dev/null 2>&1; then
@@ -214,7 +251,7 @@ do_reboot() {
 
 # Function to handle script termination
 cleanup() {
-    log "Script terminated by user"
+    log "Script terminated by signal"
     exit 130
 }
 
@@ -223,19 +260,32 @@ trap cleanup SIGINT SIGTERM
 
 # Main script execution
 main() {
+    # Load configuration
+    load_config
+    
+    # Rotate logs if needed
+    rotate_logs
+    
     log "############### Safe Plex Reboot Script Started ###############"
+    log "Configuration loaded from: $CONFIG_FILE"
+    log "Plex Server: $PLEX_SERVER"
+    log "Check Interval: $((CHECK_INTERVAL / 60)) minutes"
+    if [[ "$MAX_WAIT_TIME_ENABLED" == true ]]; then
+        log "Max Wait Time: $((MAX_WAIT_TIME / 60)) minutes (enabled)"
+    else
+        log "Max Wait Time: disabled (will wait indefinitely for streams to end)"
+    fi
+    log "Debug Mode: $DEBUG"
+    log "Dry Run: $DRY_RUN"
+    log "Force Reboot: $FORCE_REBOOT"
     
     # Check if running as root for reboot capability
     if [[ $EUID -ne 0 && "$DRY_RUN" == false ]]; then
         log "WARNING: Not running as root. Reboot command may fail."
     fi
     
-    # Get and validate Plex token
-    local plex_token
-    plex_token=$(get_plex_token)
-    
     # Validate Plex server connectivity
-    if ! validate_plex_server "$plex_token"; then
+    if ! validate_plex_server "$PLEX_TOKEN"; then
         exit 1
     fi
     
@@ -254,7 +304,7 @@ main() {
     
     while true; do
         # Check for streams with simple integer handling
-        if active_streams=$(check_streams "$plex_token"); then
+        if active_streams=$(check_streams "$PLEX_TOKEN"); then
             debug_log "Received stream count: $active_streams"
             
             # Direct integer comparison without string manipulation
@@ -269,17 +319,21 @@ main() {
             log "Failed to check Plex streams (connection error). Will retry..."
         fi
         
-        # Check if we've been waiting too long
+        # Check if we've been waiting too long (only if MAX_WAIT_TIME is enabled)
         current_time=$(date +%s)
         elapsed_time=$((current_time - start_time))
         
-        if [[ $elapsed_time -ge $MAX_WAIT_TIME ]]; then
+        if [[ "$MAX_WAIT_TIME_ENABLED" == true ]] && [[ $elapsed_time -ge $MAX_WAIT_TIME ]]; then
             log "Maximum wait time ($((MAX_WAIT_TIME / 60)) minutes) reached. Proceeding with reboot."
             do_reboot
             exit 0
         fi
         
-        log "Waiting $((CHECK_INTERVAL / 60)) minutes before next check... (Total wait: $((elapsed_time / 60)) min)"
+        if [[ "$MAX_WAIT_TIME_ENABLED" == true ]]; then
+            log "Waiting $((CHECK_INTERVAL / 60)) minutes before next check... (Total wait: $((elapsed_time / 60)) min / Max: $((MAX_WAIT_TIME / 60)) min)"
+        else
+            log "Waiting $((CHECK_INTERVAL / 60)) minutes before next check... (Total wait: $((elapsed_time / 60)) min / No max limit)"
+        fi
         sleep "$CHECK_INTERVAL"
     done
 }
