@@ -1,0 +1,33 @@
+[Unit]
+Description=Plex Safe Reboot Service
+Documentation=https://github.com/yourusername/plex-safe-reboot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/scripts/plex-safe-reboot/plex-safe-reboot.sh
+User=root
+Group=root
+
+# Security settings
+PrivateTmp=true
+NoNewPrivileges=false
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/plex-safe-reboot
+
+# Environment
+Environment="CONFIG_FILE=/etc/plex-safe-reboot/config"
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=plex-safe-reboot
+
+# Timeout settings (allow script to run for max wait time + buffer)
+TimeoutStartSec=infinity
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
