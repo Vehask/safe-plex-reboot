@@ -1,22 +1,94 @@
-# Configuration file for safe-plex-reboot.sh
-# Copy this to ~/.config/plex-reboot.conf and set your values
+# Configuration file for Plex Safe Reboot Service
+# This file will be created at /etc/plex-safe-reboot/config during installation
+# After editing, ensure proper permissions: chmod 600 /etc/plex-safe-reboot/config
 
-# Plex authentication token (get from Plex Web > Settings > Account > Show Advanced)
-PLEX_TOKEN="your_actual_plex_token_here"
+# ============================================================================
+# REQUIRED SETTINGS
+# ============================================================================
+
+# Plex authentication token (REQUIRED)
+# Get your token from: https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/
+# Steps:
+#   1. Sign in to your Plex account in Plex Web App
+#   2. Browse to a library item and view the XML for it
+#   3. Look in the URL and find the token as the X-Plex-Token value
+PLEX_TOKEN="<YOUR_PLEX_TOKEN>"
+
+# ============================================================================
+# PLEX SERVER SETTINGS
+# ============================================================================
 
 # Plex server URL
-# For same VM/machine: http://127.0.0.1:32400
-# For different VM/machine: http://PLEX_VM_IP:32400
-# PLEX_SERVER="http://192.168.1.100:32400"
+# For local server (same machine): http://127.0.0.1:32400
+# For local network server: http://<LOCAL_IP>:32400
+# Example: http://YOUR_PLEX_SERVER_IP:32400
+PLEX_SERVER="http://127.0.0.1:32400"
 
-# Log file location (default: /var/log/update-logs/update.log)
-# LOGFILE="/home/user/logs/plex-reboot.log"
+# ============================================================================
+# TIMING SETTINGS
+# ============================================================================
 
-# Check interval in seconds (default: 300 = 5 minutes)
-# CHECK_INTERVAL=300
+# Check interval in seconds (how often to check for active streams)
+# Default: 300 (5 minutes)
+# Recommended: 300-600 (5-10 minutes)
+CHECK_INTERVAL=300
 
-# Maximum wait time in seconds (default: 7200 = 2 hours)
-# MAX_WAIT_TIME=7200
+# Maximum wait time in seconds (how long to wait before forcing reboot)
+# Default: 7200 (2 hours)
+# Recommended: 3600-14400 (1-4 hours)
+# Note: Only applies if MAX_WAIT_TIME_ENABLED is set to true
+MAX_WAIT_TIME=7200
 
-# Debug mode - set to true to enable detailed logging (default: false)
-# DEBUG=true
+# Enable or disable maximum wait time
+# true = Reboot after MAX_WAIT_TIME even if streams are active
+# false = Wait indefinitely until no streams are detected
+# Default: true
+MAX_WAIT_TIME_ENABLED=true
+
+# ============================================================================
+# LOGGING SETTINGS
+# ============================================================================
+
+# Log file location
+# Default: /var/log/plex-safe-reboot/plex-reboot.log
+# Ensure the directory exists and is writable
+LOGFILE="/var/log/plex-safe-reboot/plex-reboot.log"
+
+# Debug mode - set to true to enable detailed logging
+# Default: false
+# Set to true for troubleshooting
+DEBUG=false
+
+# Log file rollover - automatically rotate and clean old log files
+# true = Enable automatic log rotation
+# false = Disable log rotation (logs will grow indefinitely)
+# Default: true
+LOG_FILE_ROLLOVER=true
+
+# Log file rollover days - delete log files older than this many days
+# Default: 30 days
+# Only applies if LOG_FILE_ROLLOVER is set to true
+LOG_FILE_ROLLOVER_DAYS=30
+
+# ============================================================================
+# SCRIPT SETTINGS
+# ============================================================================
+
+# Script directory (where the script is installed)
+# Default: /usr/local/bin/scripts/plex-safe-reboot
+# This will be set during installation
+SCRIPT_DIR="/usr/local/bin/scripts/plex-safe-reboot"
+
+# ============================================================================
+# OPERATIONAL SETTINGS
+# ============================================================================
+
+# Force reboot - skip stream check and reboot immediately
+# Default: false
+# WARNING: Setting this to true will reboot without checking for streams!
+FORCE_REBOOT=false
+
+# Dry run mode - show what would happen without actually rebooting
+# Default: false
+# Set to true for testing
+DRY_RUN=false
