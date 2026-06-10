@@ -1,259 +1,435 @@
-# Safe Plex Reboot Script
+# Plex Safe Reboot
 
-A bash script that safely reboots a server by checking for active Plex streams first. The script will postpone rebooting until all Plex streams have ended, ensuring users aren't interrupted during playback.
+A systemd service that safely reboots your system only when Plex Media Server has no active streams. Perfect for scheduled maintenance reboots without interrupting users.
 
 ## Features
 
-- ✅ **Stream Detection**: Monitors Plex API for active video streams
-- ✅ **Automatic Postponing**: Waits until all streams finish before rebooting
-- ✅ **Cross-VM Support**: Can run on different VM than Plex server
-- ✅ **Cron Compatible**: Designed to work reliably in cron environments
-- ✅ **Configurable Timeouts**: Maximum wait time to prevent infinite delays
-- ✅ **Multiple Config Methods**: Environment variables, config files, or command line
-- ✅ **Debug Mode**: Optional detailed logging for troubleshooting
-- ✅ **Dry Run Mode**: Test functionality without actually rebooting
+- ✅ Checks for active Plex streams before rebooting
+- ✅ Configurable check intervals and maximum wait times
+- ✅ Optional infinite wait mode (wait indefinitely for streams to end)
+- ✅ Automatic log rotation and cleanup
+- ✅ Runs as a systemd service with timer support
+- ✅ Interactive installation wizard
+- ✅ Comprehensive logging with optional debug mode
+- ✅ Dry-run mode for testing
+- ✅ Force reboot option for emergencies
+- ✅ Automatic retry on connection failures
 
-## Quick Start
+## Requirements
 
-### 1. Download the Script
+- Linux system with systemd
+- Plex Media Server (local or network accessible)
+- `curl` command-line tool
+- Root/sudo access for installation
+
+## Installation
+
+### Quick Installation (Recommended)
+
+Use the interactive installation wizard:
 
 ```bash
-# Clone the repository
-git clone https://github.com/vehask/safe-plex-reboot.git
-cd safe-plex-reboot
-
-# Or download directly
-wget https://raw.githubusercontent.com/vehask/safe-plex-reboot/main/safe-plex-reboot.sh
-chmod +x safe-plex-reboot.sh
+sudo ./install.sh
 ```
-### 2. Make it executable
+
+The installer will guide you through:
+- ✅ Choosing installation directories
+- ✅ Configuring Plex server connection (localhost or network IP)
+- ✅ Setting up your Plex token
+- ✅ Configuring timing options (check interval, max wait time)
+- ✅ Customizing timer schedule (daily or specific days/time)
+- ✅ Setting up log rotation
+- ✅ Creating convenient shell aliases
+- ✅ Testing the configuration
+- ✅ Enabling the systemd timer
+
+### Manual Installation
+
+If you prefer manual installation:
+
+#### 1. Create Required Directories
+
 ```bash
-chmod +x /Path/to/script/safe-plex-reboot.sh
+sudo mkdir -p /usr/local/bin/scripts/plex-safe-reboot
+sudo mkdir -p /etc/plex-safe-reboot
+sudo mkdir -p /var/log/plex-safe-reboot
 ```
 
-### 3. Get Your Plex Token
+#### 2. Install the Script
 
-Follow this link for official instructions from Plex:
-https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/
+```bash
+sudo cp plex-safe-reboot.sh /usr/local/bin/scripts/plex-safe-reboot/
+sudo chmod +x /usr/local/bin/scripts/plex-safe-reboot/plex-safe-reboot.sh
+```
 
-### 4. Configure the Script
+#### 3. Install Systemd Files
+
+```bash
+sudo cp plex-safe-reboot.service /etc/systemd/system/
+sudo cp plex-safe-reboot.timer /etc/systemd/system/
+sudo chmod 644 /etc/systemd/system/plex-safe-reboot.service
+sudo chmod 644 /etc/systemd/system/plex-safe-reboot.timer
+```
+
+#### 4. Configure the Service
 
 ```bash
 # Copy the example configuration
-cp plex-reboot.conf.example ~/.config/plex-reboot.conf
+sudo cp config.example /etc/plex-safe-reboot/config
 
-# Edit with your settings
-nano ~/.config/plex-reboot.conf
+# Edit the configuration file
+sudo nano /etc/plex-safe-reboot/config
 ```
 
-**Basic configuration:**
-```bash
-# Your Plex authentication token
-PLEX_TOKEN="your_actual_plex_token_here"
+**Important:** You must set your `PLEX_TOKEN` in the configuration file. Get your token from:
+https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/
 
-# Plex server URL
-# Same VM/machine: http://127.0.0.1:32400
-# Different VM: http://PLEX_VM_IP:32400
-PLEX_SERVER="http://127.0.0.1:32400"
+```bash
+# Secure the configuration file (contains sensitive token)
+sudo chmod 600 /etc/plex-safe-reboot/config
 ```
 
-### 4. Test the Script
+#### 5. Set Proper Permissions
 
 ```bash
-# Test without actually rebooting
-./safe-plex-reboot.sh --dry-run
-
-# Test with debug output
-./safe-plex-reboot.sh --dry-run --debug
+sudo chown -R root:root /usr/local/bin/scripts/plex-safe-reboot
+sudo chown -R root:root /etc/plex-safe-reboot
+sudo chown -R root:root /var/log/plex-safe-reboot
 ```
 
-### 5. Set Up Automated Execution
-
-**Cron Job**
-```bash
-# Edit root's crontab
-sudo crontab -e
-# OR
-sudo nano /etc/crontab
-
-# Add entry to reboot daily at 5 AM if no streams
-0 5 * * * /full/path/to/safe-plex-reboot.sh
-```
-
-## Usage
+#### 6. Reload Systemd and Enable the Timer
 
 ```bash
-./safe-plex-reboot.sh [OPTIONS]
-```
+# Reload systemd to recognize new service files
+sudo systemctl daemon-reload
 
-### Command Line Options
+# Enable the timer to start on boot
+sudo systemctl enable plex-safe-reboot.timer
 
-| Option | Description |
-|--------|-------------|
-| `--force` | Skip stream check and reboot immediately |
-| `--dry-run` | Show what would happen without rebooting |
-| `--debug` | Enable detailed debug logging |
-| `--help` | Show help message |
-
-### Examples
-
-```bash
-# Normal operation - check streams and reboot if none active
-./safe-plex-reboot.sh
-
-# Force immediate reboot (ignore streams)
-./safe-plex-reboot.sh --force
-
-# Test mode with debug output
-./safe-plex-reboot.sh --dry-run --debug
-
-# Run with environment variable
-PLEX_TOKEN="your_token" ./safe-plex-reboot.sh
+# Start the timer
+sudo systemctl start plex-safe-reboot.timer
 ```
 
 ## Configuration
 
-### Configuration Methods (in order of priority)
+Edit [`/etc/plex-safe-reboot/config`](file:///etc/plex-safe-reboot/config) to customize the service:
 
-1. **Command line options** (`--debug`, `--force`, etc.)
-2. **Environment variables** (`PLEX_TOKEN`, `DEBUG`, etc.)
-3. **Configuration files** (checked in this order):
-   - `~/.config/plex-reboot.conf`
-   - `./plex-reboot.conf` (same directory as script)
-   - `/etc/plex-reboot.conf`
-   - `~/.plex-reboot.conf`
+### Required Settings
 
-### Configuration Options
+| Setting | Description | Example |
+|---------|-------------|---------|
+| `PLEX_TOKEN` | Your Plex authentication token (REQUIRED) | `"abc123xyz..."` |
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PLEX_TOKEN` | *required* | Plex authentication token |
-| `PLEX_SERVER` | `http://127.0.0.1:32400` | Plex server URL |
-| `LOGFILE` | `/var/log/update-logs/update.log` | Log file location |
-| `CHECK_INTERVAL` | `300` | Seconds between stream checks (5 min) |
-| `MAX_WAIT_TIME` | `7200` | Maximum wait time in seconds (2 hours) |
-| `DEBUG` | `false` | Enable debug logging |
+### Optional Settings
 
-### Example Configuration File
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `PLEX_SERVER` | Plex server URL | `http://127.0.0.1:32400` |
+| `CHECK_INTERVAL` | Seconds between stream checks | `300` (5 min) |
+| `MAX_WAIT_TIME` | Maximum seconds to wait before forcing reboot | `7200` (2 hours) |
+| `MAX_WAIT_TIME_ENABLED` | Enable/disable maximum wait time limit | `true` |
+| `LOGFILE` | Path to log file | `/var/log/plex-safe-reboot/plex-reboot.log` |
+| `LOG_FILE_ROLLOVER` | Enable automatic log rotation | `true` |
+| `LOG_FILE_ROLLOVER_DAYS` | Days to keep old log files | `30` |
+| `DEBUG` | Enable detailed logging | `false` |
+| `FORCE_REBOOT` | Skip stream check and reboot immediately | `false` |
+| `DRY_RUN` | Test mode - don't actually reboot | `false` |
+| `SCRIPT_DIR` | Script installation directory | `/usr/local/bin/scripts/plex-safe-reboot` |
+
+### Example Configuration for CT/LXC Container
+
+If your Plex server runs in a container on your local network:
 
 ```bash
-# Plex authentication token (required)
-PLEX_TOKEN="your_actual_plex_token_here"
-
-# Plex server (adjust for your setup)
-PLEX_SERVER="http://192.168.1.100:32400"
-
-# Optional settings
-LOGFILE="/var/log/plex-reboot.log"
+PLEX_TOKEN="your_actual_token_here"
+PLEX_SERVER="http://YOUR_PLEX_SERVER_IP:32400"
 CHECK_INTERVAL=300
 MAX_WAIT_TIME=7200
+MAX_WAIT_TIME_ENABLED=true
+LOG_FILE_ROLLOVER=true
+LOG_FILE_ROLLOVER_DAYS=30
 DEBUG=false
 ```
 
-## Cross-VM Setup
+### Infinite Wait Mode
 
-If running the script on a different VM than your Plex server:
+To wait indefinitely for streams to end (no maximum wait time):
 
-### 1. Find Plex VM IP
 ```bash
-# On Plex VM, run:
-hostname -I
+MAX_WAIT_TIME_ENABLED=false
 ```
 
-### 2. Update Configuration
+When disabled, the script will keep checking for active streams at the configured interval and only reboot when no streams are detected.
+
+## Usage
+
+### Timer-Based Execution (Recommended)
+
+The timer runs automatically on a schedule (default: Sunday at 3:00 AM).
+
 ```bash
-# Set Plex server to VM's IP
-PLEX_SERVER="http://192.168.1.100:32400"
+# Check timer status
+sudo systemctl status plex-safe-reboot.timer
+
+# View next scheduled run
+sudo systemctl list-timers plex-safe-reboot.timer
+
+# Stop the timer
+sudo systemctl stop plex-safe-reboot.timer
+
+# Disable the timer (prevent auto-start on boot)
+sudo systemctl disable plex-safe-reboot.timer
 ```
 
-### 3. Test Connectivity
+### Manual Execution
+
+Run the service manually at any time:
+
 ```bash
-# From the VM running the script:
-curl -I "http://192.168.1.100:32400"
-curl -sf "http://192.168.1.100:32400/?X-Plex-Token=YOUR_TOKEN"
+# Run the service now
+sudo systemctl start plex-safe-reboot.service
+
+# Check service status
+sudo systemctl status plex-safe-reboot.service
 ```
 
-### 4. Firewall Setup
+### Direct Script Execution
+
+You can also run the script directly with command-line flags:
+
 ```bash
-# On Plex VM, allow connections from other VMs:
-sudo ufw allow from 192.168.1.0/24 to any port 32400
+# Normal run
+sudo /usr/local/bin/scripts/plex-safe-reboot/plex-safe-reboot.sh
+
+# Dry run (test without rebooting)
+sudo /usr/local/bin/scripts/plex-safe-reboot/plex-safe-reboot.sh --dry-run
+
+# Enable debug logging
+sudo /usr/local/bin/scripts/plex-safe-reboot/plex-safe-reboot.sh --debug
+
+# Edit configuration file (opens in nano)
+sudo /usr/local/bin/scripts/plex-safe-reboot/plex-safe-reboot.sh --config
+
+# Show help
+/usr/local/bin/scripts/plex-safe-reboot/plex-safe-reboot.sh --help
 ```
+
+### Using Shell Aliases (If Configured During Installation)
+
+If you enabled aliases during installation, you can use these convenient shortcuts:
+
+```bash
+# Run the script
+plex-safe-reboot
+
+# Edit configuration
+plex-safe-reboot-config
+
+# Test without rebooting
+plex-safe-reboot-dry-run
+
+# Run with debug logging
+plex-safe-reboot-debug
+```
+
+Aliases are stored in `/etc/profile.d/plex-safe-reboot-aliases.sh` and are available in new shell sessions.
+
+## Customizing the Timer Schedule
+
+Edit [`/etc/systemd/system/plex-safe-reboot.timer`](file:///etc/systemd/system/plex-safe-reboot.timer) to change when the service runs:
+
+```ini
+# Weekly on Sunday at 3:00 AM (default)
+OnCalendar=Sun *-*-* 03:00:00
+
+# Daily at 4:00 AM
+OnCalendar=*-*-* 04:00:00
+
+# First day of every month at 2:00 AM
+OnCalendar=*-*-01 02:00:00
+
+# Every Monday and Friday at 3:30 AM
+OnCalendar=Mon,Fri *-*-* 03:30:00
+```
+
+After editing, reload systemd:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart plex-safe-reboot.timer
+```
+
+## Monitoring and Logs
+
+### View Logs
+
+```bash
+# View recent logs from systemd journal
+sudo journalctl -u plex-safe-reboot.service -n 50
+
+# Follow logs in real-time
+sudo journalctl -u plex-safe-reboot.service -f
+
+# View log file directly
+sudo tail -f /var/log/plex-safe-reboot/plex-reboot.log
+
+# View all logs for today
+sudo journalctl -u plex-safe-reboot.service --since today
+```
+
+### Check Service Status
+
+```bash
+# Check if timer is active
+sudo systemctl is-active plex-safe-reboot.timer
+
+# Check if timer is enabled
+sudo systemctl is-enabled plex-safe-reboot.timer
+
+# View detailed timer information
+sudo systemctl status plex-safe-reboot.timer
+
+# View detailed service information
+sudo systemctl status plex-safe-reboot.service
+```
+
+## How It Works
+
+1. **Timer triggers** the service at the scheduled time
+2. **Service starts** and loads configuration from [`/etc/plex-safe-reboot/config`](file:///etc/plex-safe-reboot/config)
+3. **Validates** connection to Plex server
+4. **Checks** for active streams every `CHECK_INTERVAL` seconds
+5. **Waits** if streams are active, up to `MAX_WAIT_TIME`
+6. **Reboots** when no streams are detected OR max wait time is reached
+7. **Logs** all activity to journal and log file
 
 ## Troubleshooting
 
-### Common Issues
-
-**Script runs but doesn't reboot when streams = 0**
-- Enable debug mode: `--debug`
-- Check logs for API response issues
-- Verify Plex token is valid
-
-**"Cannot connect to Plex server"**
-- Check `PLEX_SERVER` URL is correct
-- Test connectivity: `curl -I "http://your-plex-server:32400"`
-- Verify firewall settings
-
-**Works manually but not in cron**
-- Use absolute paths in cron: `/full/path/to/safe-plex-reboot.sh`
-- Set environment in cron: `PLEX_TOKEN=token /path/to/script`
-- Check cron logs: `sudo tail -f /var/log/cron`
-
-**Cron doesn't have required commands**
-- Script automatically finds commands in standard locations
-- Install missing packages: `apt install curl` or `yum install curl`
-
-### Debug Mode
-
-Enable detailed logging to troubleshoot issues:
+### Service fails to start
 
 ```bash
-# Command line
-./safe-plex-reboot.sh --debug
+# Check for configuration errors
+sudo /usr/local/bin/scripts/plex-safe-reboot/plex-safe-reboot.sh
 
-# Environment variable
-DEBUG=true ./safe-plex-reboot.sh
-
-# Configuration file
-echo "DEBUG=true" >> ~/.config/plex-reboot.conf
+# View detailed error messages
+sudo journalctl -u plex-safe-reboot.service -n 100 --no-pager
 ```
 
-### Check Cron Environment
+### Cannot connect to Plex server
 
-Create a test script to see what cron can access:
+1. Verify `PLEX_SERVER` URL in [`/etc/plex-safe-reboot/config`](file:///etc/plex-safe-reboot/config)
+2. Test connectivity: `curl -I http://127.0.0.1:32400`
+3. Verify `PLEX_TOKEN` is correct
+4. Enable debug mode: `DEBUG=true` in config
+
+### Script doesn't reboot
+
+1. Ensure script runs as root (systemd service does this automatically)
+2. Check if `DRY_RUN=true` is set in config
+3. Verify `FORCE_REBOOT` is not preventing normal operation
+4. Check logs for stream detection issues
+
+### Enable Debug Mode
+
+Edit [`/etc/plex-safe-reboot/config`](file:///etc/plex-safe-reboot/config):
+
 ```bash
-#!/bin/bash
-echo "PATH: $PATH" > /tmp/cron-test.log
-echo "HOME: $HOME" >> /tmp/cron-test.log
-which curl >> /tmp/cron-test.log 2>&1
-which systemctl >> /tmp/cron-test.log 2>&1
+DEBUG=true
 ```
 
-## Requirements
+Then restart the service:
 
-- **Bash 4.0+**
-- **curl** (for API calls)
-- **Root access** (for reboot capability)
-- **Network access** to Plex server
-- **Valid Plex token**
+```bash
+sudo systemctl restart plex-safe-reboot.service
+```
+
+## Testing
+
+### Test Without Rebooting
+
+1. Edit [`/etc/plex-safe-reboot/config`](file:///etc/plex-safe-reboot/config):
+   ```bash
+   DRY_RUN=true
+   DEBUG=true
+   ```
+
+2. Run the service:
+   ```bash
+   sudo systemctl start plex-safe-reboot.service
+   ```
+
+3. Watch the logs:
+   ```bash
+   sudo journalctl -u plex-safe-reboot.service -f
+   ```
+
+4. Verify it detects streams correctly and would reboot when appropriate
+
+5. Disable dry-run mode when satisfied:
+   ```bash
+   DRY_RUN=false
+   ```
+
+## Uninstallation
+
+```bash
+# Stop and disable the timer
+sudo systemctl stop plex-safe-reboot.timer
+sudo systemctl disable plex-safe-reboot.timer
+
+# Remove systemd files
+sudo rm /etc/systemd/system/plex-safe-reboot.service
+sudo rm /etc/systemd/system/plex-safe-reboot.timer
+
+# Remove script and configuration
+sudo rm -rf /usr/local/bin/scripts/plex-safe-reboot
+sudo rm -rf /etc/plex-safe-reboot
+
+# Optionally remove logs
+sudo rm -rf /var/log/plex-safe-reboot
+
+# Reload systemd
+sudo systemctl daemon-reload
+```
+
+## Security Considerations
+
+- The configuration file contains your Plex token - keep it secure with `chmod 600`
+- The service runs as root to perform system reboots
+- Logs may contain sensitive information - restrict access appropriately
+- Consider using `ProtectSystem=strict` in the service file (already configured)
+
+## Migration from VM to CT/LXC
+
+If you've migrated Plex from a VM to a container:
+
+1. Update `PLEX_SERVER` in [`/etc/plex-safe-reboot/config`](file:///etc/plex-safe-reboot/config):
+   ```bash
+   # For local container
+   PLEX_SERVER="http://127.0.0.1:32400"
+   
+   # For network-accessible container
+   PLEX_SERVER="http://YOUR_PLEX_SERVER_IP:32400"
+   ```
+
+2. Verify connectivity:
+   ```bash
+   curl -I http://YOUR_PLEX_SERVER_IP:32400
+   ```
+
+3. Test the configuration:
+   ```bash
+   sudo DRY_RUN=true DEBUG=true systemctl start plex-safe-reboot.service
+   ```
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is provided as-is for personal and commercial use.
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+Contributions are welcome! Please feel free to submit issues or pull requests.
 
 ## Support
 
-If you encounter issues:
-
-1. **Enable debug mode** and check the logs
-2. **Test manually** before setting up automation
-3. **Verify network connectivity** to Plex server
-4. **Check the troubleshooting section** above
-5. **Open an issue** with debug logs and configuration details
+For issues, questions, or suggestions, please open an issue on the project repository.
